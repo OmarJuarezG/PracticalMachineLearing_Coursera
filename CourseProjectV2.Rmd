@@ -1,0 +1,122 @@
+---
+title: "Course Project"
+author: "Omar Juarez"
+date: "3 de febrero de 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Abstract
+
+In this document we are going to analyse the data provided by Human Activity Recognition. Our goal is to determine if the exercises of the participants in this test were done properly. In this particular case what we want to predict the "classe" variable based on the regressors. This variable can take 5 labels(from A to E) so we will compare the results of two methods that we have learned in this course: Decision Trees and Random Forest and the we will select the best model according the accuracy of each one.
+
+##Data Loading
+```{r, echo=TRUE}
+library(dplyr)
+library(lattice)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(e1071)
+library(rattle)
+
+set.seed(12345)
+
+setwd("D:/02 Coursera/02 R/01 Johns Hopkings-Coursera/08 Machine Learning/Data")
+
+trainUrl = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+testUrl = "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+TrainFile = "./data/pml-training.csv"
+
+TestFile = "./data/pml-testing.csv"
+
+if(!file.exists("./data")){
+  dir.create(path = "./data")
+}
+
+if(!file.exists(TrainFile)){
+  download.file(trainUrl,destfile = TrainFile, method = "curl")
+}
+
+if(!file.exists(TestFile)){
+  download.file(testUrl,destfile = TestFile,method = "curl")
+}
+
+Flag_Training = read.csv(TrainFile)
+Flag_Test = read.csv(TestFile)
+```
+
+## Cleaning data
+
+1. We can remove variables that do not change between observations. In this case, since the variables are not binary, we can remove them without biased our model.
+
+```{r, echo=FALSE}
+ToRemove1 = nearZeroVar(Flag_Training,saveMetrics = TRUE)
+
+Flag_Training = Flag_Training[,!ToRemove1$nzv]
+
+Flag_Test = Flag_Test[,!ToRemove1$nzv]
+
+ToRemove2 = grepl("^X|timestamp|username",names(Flag_Training))
+
+Flag_Training = Flag_Training[,!c(ToRemove2)]
+
+Flag_Test = Flag_Test[,!c(ToRemove2)]
+```
+
+2. We can also remove the variables that contain missing values (i.e NA's)
+```{r, echo=FALSE}
+ToRemove3 <- colSums(is.na(Flag_Training))==0
+
+Flag_Training = Flag_Training[,ToRemove3]
+
+Flag_Test = Flag_Test[,ToRemove3]
+
+```
+ We can create a Correlation Matrix to have hint about which variables might influence others.
+```{r, echo=FALSE}
+M = cor(Flag_Training[,-c(1,length(Flag_Training))],method = "spearman")
+corrplot(M,method = "square",outline = TRUE,tl.cex = 0.5)
+```
+
+## Creating Data Partition
+Once we have done the cleaning and an overlook about the correlations, we now can split the data into the training set and the testing (or validation) set. Just like the course we are going to split the data into 70% for the training and 30% for the validation dataset. This partition has to be done with the trainig dataset not with test daset otherwise our prediction would be biased.
+```{r, echo=FALSE}
+Partition = createDataPartition(Flag_Training$classe,p=0.7,list = FALSE)
+
+training = Flag_Training[Partition,]
+
+validation = Flag_Training[-Partition,]
+```
+## Decision Tree: Analysis
+As we can see in the results this kind of analysis give us an accuracy of 73.42% with a confidence interval between 72.28% and 74.55% and the out of sample error is 32.32%. The sensitivity and specificity values are high so we can say that the false positive and false negative are undercontrol. But perhaps this could be improved by using an slightly different approach.
+```{r, echo=FALSE}
+modeltree = rpart(classe~.,data = training,method = "class")
+
+prp(modeltree)
+
+predict_tree = predict(modeltree,validation,type="class")
+
+confusionMatrix(validation$classe,predict_tree)
+```
+## Ramdom Forest
+In this case, using 5 folds, we can see that the results improved by using this approach. The accuracy of the model has risen from 73.42% to nearly 1 (i.e 0.99%) while the out of sample error also improved to almost 0(0.0084%). So in general terms this model is way better than just the decision tree. We have to test those results with the validation dataset
+```{r, echo=FALSE}
+modelRF = train(classe~.,data = training,method="rf",trControl=trainControl(method = "cv",5),ntree=250)
+modelRF
+predictRF = predict(modelRF,validation)
+confusionMatrix(validation$classe,predictRF)
+1 - as.numeric(confusionMatrix(validation$classe, predictRF)$overall[1])
+```
+## Conclusions
+If we use random forest the accuracy increases a lot, so based on the results this is the model we can use. However we could do so more analysis via Area Under the Receiver Operating Characteristics(AUROC), this will tell us the how the model is capable of distinguish between classes, but this is a more advanced topic in the data science field. Another thing to consider is to make a logistic regression and compare it's result with the previous model.
+
